@@ -1,62 +1,63 @@
-# server.py
-# Main server class handling client connections, message routing and encryption
-# Supports both private and group chat modes with RSA encryption
-
+# server/server.py
 import socket
 import threading
-import rsa
+from encryption import ServerEncryption
 
 class ChatServer:
-   def __init__(self, host='127.0.0.1', port=55555):
-       self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-       self.server.bind((host, port))
-       self.server.listen()
-       
-       # Track connected clients
-       self.clients = []
-       self.nicknames = []
-       self.keys = []
-       self.partners = []
-       self.group = []
+    def __init__(self, host='127.0.0.1', port=55557):
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.bind((host, port))
+        self.server.listen()
+        self.clients = []
+        self.nicknames = []
+        self.encryption = ServerEncryption()
+        self.keys = {}
 
-   def start(self):
-       print("Server running...")
-       while True:
-           client, address = self.server.accept()
-           self._handle_new_connection(client, address)
+    def broadcast(self, message, sender=None):
+        print(f"Broadcasting: {message}")
+        try:
+            for client in self.clients:
+                if client != sender:
+                 client.send(message)
+        except:
+            pass
 
-   def _handle_new_connection(self, client, address):
-       try:
-           # Get username and chat mode choice
-           client.send('NICK'.encode('ascii'))
-           nickname = client.recv(1024).decode('ascii')
-           client.send('CHOICE'.encode('ascii'))
-           choice = client.recv(1024).decode('ascii')
+    def handle_client(self, client):
+        try:
+            client.send('KEY'.encode('ascii'))
+            key_data = client.recv(1024)
+            self.keys[client] = self.encryption.load_public_key(key_data)
+        
+            while True:
+                message = client.recv(1024)
+                if message:
+                    self.broadcast(message)
+        except:
+            if client in self.clients:
+                self.remove_client(client)
 
-           if choice == "2":  # Private chat
-               self._setup_private_chat(client, nickname)
-           else:  # Group chat
-               self._setup_group_chat(client, nickname)
+    def remove_client(self, client):
+        if client in self.clients:
+            index = self.clients.index(client)
+            self.clients.remove(client)
+            nickname = self.nicknames[index]
+            self.nicknames.remove(nickname)
+            self.broadcast(f"{nickname} left!".encode('ascii'))
 
-           # Start message handling thread
-           thread = threading.Thread(target=self._handle_client, args=(client,))
-           thread.start()
-
-       except Exception as e:
-           print(f"Error handling new connection: {e}")
-           client.close()
-
-   def _handle_client(self, client):
-       while True:
-           try:
-               message = client.recv(1024)
-               if not message:
-                   break
-               self._route_message(client, message)
-           except:
-               self._remove_client(client)
-               break
+    def start(self):
+        print("Server running...")
+        while True:
+            client, address = self.server.accept()
+            client.send('NICK'.encode('ascii'))
+            nickname = client.recv(1024).decode('ascii')
+            self.nicknames.append(nickname)
+            self.clients.append(client)
+            print(f"Connected: {nickname}")
+            self.broadcast(f"{nickname} joined!".encode('ascii'))
+            thread = threading.Thread(target=self.handle_client, args=(client,))
+            thread.start()
 
 if __name__ == "__main__":
-   server = ChatServer()
-   server.start()
+    server = ChatServer()
+    server.start()
