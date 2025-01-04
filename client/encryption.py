@@ -18,9 +18,11 @@ class ClientEncryption:
             return rsa.decrypt(message, self.private_key).decode('ascii')
         except:
             return message.decode('ascii')
-            
+
+    # Client encryption.py
     def get_public_key(self):
-        return self.public_key.save_pkcs1()
+        """Return the public key in PEM format."""
+        return self.public_key.save_pkcs1(format='PEM')
 
     def set_partner_key(self, key_data):
         self.partner_key = rsa.PublicKey.load_pkcs1(key_data)
